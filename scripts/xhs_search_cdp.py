@@ -248,12 +248,19 @@ def make_feed_detail_url(feed_id: str, xsec_token: str) -> str:
 
 def extract_note_id(url: str) -> str:
     """从 URL 中提取 note_id。"""
+    # /explore/{note_id} 格式
     match = re.search(r"/explore/([a-f0-9]+)", url)
     if match:
         return match.group(1)
+    # /discovery/item/{note_id} 格式
+    match = re.search(r"/discovery/item/([a-f0-9]+)", url)
+    if match:
+        return match.group(1)
+    # noteId= 参数格式
     match = re.search(r"noteId=([a-f0-9]+)", url)
     if match:
         return match.group(1)
+    # 纯 note_id 格式
     match = re.search(r"^[a-f0-9]{24}$", url)
     if match:
         return url
@@ -572,18 +579,23 @@ def get_note_detail(note_url: str, xsec_token: str = "") -> dict:
         # 解析 note_id
         note_id = extract_note_id(note_url)
 
-        # 构建详情 URL
-        if xsec_token:
+        # 确定详情 URL：优先使用传入的完整 URL
+        if note_url.startswith("https://") and "xiaohongshu.com" in note_url:
+            # 传入的是完整 URL，直接使用
+            detail_url = note_url
+        elif xsec_token:
+            # 只有 note_id 和 xsec_token，构建 URL
             detail_url = make_feed_detail_url(note_id, xsec_token)
         else:
+            # 只有 note_id，构建基础 URL
             detail_url = f"https://www.xiaohongshu.com/discovery/item/{note_id}?source=webshare&xhsshare=pc_web"
 
         # 连接并导航
         client.connect("xiaohongshu.com")
-        client._navigate(detail_url)
+        client._navigate(detail_url, wait_time=5.0)  # 增加等待时间
         client._wait_for_load()
-        client._wait_for_initial_state()
-        client._wait_for_detail_state()
+        client._wait_for_initial_state(timeout=30.0)  # 增加超时时间
+        client._wait_for_detail_state(timeout=30.0)  # 增加超时时间
 
         # 提取详情数据
         raw = client._evaluate(f"""
@@ -622,10 +634,58 @@ def get_note_detail(note_url: str, xsec_token: str = "") -> dict:
                 "error": f"解析详情数据失败: {e}",
             }
 
+        # 从 DOM 中提取高清图片链接（优先使用 DOM 中的 src）
+        dom_images = client._evaluate("""
+            (() => {
+                // 尝试多种选择器提取图片
+                const selectors = [
+                    '.note-slider-img img',
+                    '.swiper-container img',
+                    '.swiper-slide-active img',
+                    '.note-container .swiper img',
+                    '.post-content img',
+                    '.note-content img[src*="xhscdn"]',
+                    'img[src*="sns-webpic"]'
+                ];
+                
+                let images = [];
+                
+                for (const selector of selectors) {
+                    const imgs = document.querySelectorAll(selector);
+                    if (imgs.length > 0) {
+                        imgs.forEach(img => {
+                            // 优先 src，其次 data-src
+                            const url = img.getAttribute('src') || img.getAttribute('data-src') || '';
+                            // 过滤：只收集帖子高清图片，排除头像、图标等
+                            if (url && url.includes('xhscdn.com') && !url.includes('avatar') && !url.includes('icon') && !images.includes(url)) {
+                                images.push(url);
+                            }
+                        });
+                        if (images.length > 0) {
+                            break; // 找到图片就停止尝试其他选择器
+                        }
+                    }
+                }
+                
+                return images;
+            })()
+        """)
+
         # 格式化详情
         detail = format_detail_result(data)
         detail["url"] = detail_url
         detail["success"] = True
+        
+        # 如果 DOM 中有高清图片链接，优先使用这些链接
+        if dom_images and isinstance(dom_images, list) and len(dom_images) > 0:
+            # 检查链接是否为高清格式（sns-webpic-qc.xhscdn.com）
+            hd_images = [url for url in dom_images if 'sns-webpic' in url or 'xhscdn.com' in url]
+            if hd_images:
+                print(f"[xhs_cdp] 从 DOM 提取到 {len(hd_images)} 张高清图片")
+                detail["images"] = hd_images
+                # 更新视频封面（如果是视频笔记）
+                if detail.get("type") == "video" and hd_images:
+                    detail["video_cover"] = hd_images[0]
 
         # 保存结果
         save_result(detail, f"detail_{note_id}.json")
