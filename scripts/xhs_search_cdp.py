@@ -514,13 +514,14 @@ def check_login(client: XHSCDPClient) -> dict:
         client.disconnect()
 
 
-def search_notes(keyword: str, limit: int = 10, sort_by: str = "general") -> dict:
+def search_notes(keyword: str, limit: int = 10, sort_by: str = "general", save: bool = True) -> dict:
     """搜索小红书笔记。
 
     Args:
         keyword: 搜索关键词
         limit: 返回结果数量
         sort_by: 排序方式 (general/popular/latest)
+        save: 是否保存结果到文件（默认 True）
     """
     print(f"[xhs_cdp] 搜索关键词: {keyword}, 排序: {sort_by}")
 
@@ -586,8 +587,9 @@ def search_notes(keyword: str, limit: int = 10, sort_by: str = "general") -> dic
             "notes": formatted,
         }
 
-        # 保存结果
-        save_result(output, f"search_{keyword}.json")
+        # 保存结果（可选）
+        if save:
+            save_result(output, f"search_{keyword}.json")
 
         return output
 
@@ -767,8 +769,8 @@ def search_and_detail(keyword: str, limit: int = 5, delay: float = 2.0, sort_by:
     """
     print(f"[xhs_cdp] 搜索并获取详情: {keyword}")
 
-    # 先搜索
-    search_result = search_notes(keyword, limit, sort_by)
+    # 先搜索（不保存，最后统一保存）
+    search_result = search_notes(keyword, limit, sort_by, save=False)
 
     if not search_result.get("success", False):
         return search_result
@@ -809,8 +811,8 @@ def search_and_detail(keyword: str, limit: int = 5, delay: float = 2.0, sort_by:
         "notes": detailed_notes,
     }
 
-    # 保存完整结果
-    save_result(output, f"search_detail_{keyword}.json")
+    # 保存完整结果（统一命名格式）
+    save_result(output, f"search_{keyword}.json")
 
     return output
 
