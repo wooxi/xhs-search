@@ -272,6 +272,19 @@ def format_search_results(feeds: list[dict]) -> list[dict]:
         interact_info = note_card.get("interactInfo", {})
         cover = note_card.get("cover", {})
 
+        # 提取所有图片链接
+        images = []
+        # 优先从 imageList 提取
+        for img in note_card.get("imageList", []) or []:
+            img_url = img.get("urlDefault") or img.get("url") or img.get("urlDefaultWatermark")
+            if img_url:
+                images.append(img_url)
+        # 如果没有 imageList，使用 cover
+        if not images:
+            cover_url = cover.get("urlDefault") or cover.get("url")
+            if cover_url:
+                images.append(cover_url)
+
         item = {
             "id": feed.get("id", ""),
             "url": f"https://www.xiaohongshu.com/explore/{feed.get('id', '')}",
@@ -286,6 +299,7 @@ def format_search_results(feeds: list[dict]) -> list[dict]:
                 "name": user.get("nickname", ""),
             },
             "cover": cover.get("urlDefault", cover.get("url", "")),
+            "images": images,  # 所有图片链接数组
         }
 
         # 构建完整 URL（手机端可打开格式）
@@ -303,17 +317,27 @@ def format_detail_result(data: dict) -> dict:
     user = note.get("user", {})
     interact_info = note.get("interactInfo", {})
 
-    # 提取图片列表
+    # 提取所有图片链接（优先高清链接）
     images = []
     for img in note.get("imageList", []) or []:
-        images.append(img.get("urlDefault", img.get("url", "")))
+        # 优先使用默认链接，其次水印链接，最后原始链接
+        img_url = img.get("urlDefault") or img.get("urlDefaultWatermark") or img.get("url")
+        if img_url:
+            images.append(img_url)
+
+    # 提取视频封面（如果有）
+    video_cover = ""
+    if note.get("type") == "video":
+        video = note.get("video", {})
+        video_cover = video.get("cover", {}).get("urlDefault", "")
 
     return {
         "id": note.get("noteId", ""),
         "title": note.get("title", ""),
         "content": note.get("desc", ""),
         "type": note.get("type", ""),
-        "images": images,
+        "images": images,  # 所有图片链接数组
+        "video_cover": video_cover,  # 视频封面（如果是视频笔记）
         "likes": interact_info.get("likedCount", "0"),
         "collects": interact_info.get("collectedCount", "0"),
         "comments": interact_info.get("commentCount", "0"),
