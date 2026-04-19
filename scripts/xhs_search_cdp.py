@@ -260,6 +260,27 @@ def extract_note_id(url: str) -> str:
     return "unknown"
 
 
+def extract_image_url(img_data: dict) -> str:
+    """从图片数据中提取 URL，优先高清链接。
+    
+    搜索结果的 imageList 结构: {infoList: [{imageScene, url}]}
+    详情页的 imageList 结构: {urlDefault, urlPre, infoList: [...]}"""
+    # 优先从 infoList 提取高清预览图 (WB_PRV)
+    for info in img_data.get("infoList", []) or []:
+        if info.get("imageScene") == "WB_PRV":
+            url = info.get("url")
+            if url:
+                return url
+    # 其次从 infoList 提取默认图 (WB_DFT)
+    for info in img_data.get("infoList", []) or []:
+        if info.get("imageScene") == "WB_DFT":
+            url = info.get("url")
+            if url:
+                return url
+    # 最后使用 urlDefault 或 urlPre
+    return img_data.get("urlDefault") or img_data.get("urlPre") or img_data.get("url") or ""
+
+
 def format_search_results(feeds: list[dict]) -> list[dict]:
     """格式化搜索结果。"""
     formatted = []
@@ -274,9 +295,9 @@ def format_search_results(feeds: list[dict]) -> list[dict]:
 
         # 提取所有图片链接
         images = []
-        # 优先从 imageList 提取
+        # 从 imageList 提取所有图片
         for img in note_card.get("imageList", []) or []:
-            img_url = img.get("urlDefault") or img.get("url") or img.get("urlDefaultWatermark")
+            img_url = extract_image_url(img)
             if img_url:
                 images.append(img_url)
         # 如果没有 imageList，使用 cover
@@ -311,6 +332,40 @@ def format_search_results(feeds: list[dict]) -> list[dict]:
     return formatted
 
 
+def extract_video_url(video_data: dict) -> str:
+    """从视频数据中提取最优视频链接。
+    
+    视频结构: video.media.stream.{h264, h265, av1, h266}
+    优先级: h265 高分辨率 > h264 高分辨率 > h264 默认
+    """
+    media = video_data.get("media", {})
+    stream = media.get("stream", {})
+    
+    # 优先 H265 (HEVC) 高分辨率版本
+    h265_streams = stream.get("h265", []) or []
+    if h265_streams:
+        # 按分辨率排序，优先最高
+        sorted_h265 = sorted(h265_streams, key=lambda x: x.get("height", 0) * x.get("width", 0), reverse=True)
+        if sorted_h265:
+            return sorted_h265[0].get("masterUrl", "")
+    
+    # 其次 H264 高分辨率版本
+    h264_streams = stream.get("h264", []) or []
+    if h264_streams:
+        # 按分辨率排序，优先最高
+        sorted_h264 = sorted(h264_streams, key=lambda x: x.get("height", 0) * x.get("width", 0), reverse=True)
+        if sorted_h264:
+            return sorted_h264[0].get("masterUrl", "")
+    
+    # 其他编码格式
+    for codec in ["av1", "h266"]:
+        codec_streams = stream.get(codec, []) or []
+        if codec_streams:
+            return codec_streams[0].get("masterUrl", "")
+    
+    return ""
+
+
 def format_detail_result(data: dict) -> dict:
     """格式化帖子详情。"""
     note = data.get("note", {})
@@ -320,16 +375,25 @@ def format_detail_result(data: dict) -> dict:
     # 提取所有图片链接（优先高清链接）
     images = []
     for img in note.get("imageList", []) or []:
-        # 优先使用默认链接，其次水印链接，最后原始链接
-        img_url = img.get("urlDefault") or img.get("urlDefaultWatermark") or img.get("url")
+        img_url = extract_image_url(img)
         if img_url:
             images.append(img_url)
 
-    # 提取视频封面（如果有）
+    # 提取视频信息（如果是视频笔记）
+    video_url = ""
     video_cover = ""
+    video_duration = 0
     if note.get("type") == "video":
         video = note.get("video", {})
-        video_cover = video.get("cover", {}).get("urlDefault", "")
+        video_url = extract_video_url(video)
+        video_cover = images[0] if images else ""  # 视频封面就是第一张图片
+        # 提取视频时长
+        capa = video.get("capa", {})
+        video_duration = capa.get("duration", 0)
+        # 也从 media.video.duration 提取（秒）
+        media_video = video.get("media", {}).get("video", {})
+        if not video_duration:
+            video_duration = media_video.get("duration", 0)
 
     return {
         "id": note.get("noteId", ""),
@@ -337,7 +401,9 @@ def format_detail_result(data: dict) -> dict:
         "content": note.get("desc", ""),
         "type": note.get("type", ""),
         "images": images,  # 所有图片链接数组
-        "video_cover": video_cover,  # 视频封面（如果是视频笔记）
+        "video": video_url,  # 视频链接（如果是视频笔记）
+        "video_cover": video_cover,  # 视频封面
+        "video_duration": video_duration,  # 视频时长（秒）
         "likes": interact_info.get("likedCount", "0"),
         "collects": interact_info.get("collectedCount", "0"),
         "comments": interact_info.get("commentCount", "0"),
