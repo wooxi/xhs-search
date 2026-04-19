@@ -267,6 +267,41 @@ def extract_note_id(url: str) -> str:
     return "unknown"
 
 
+def convert_to_hd_url(url: str) -> str:
+    """将预览图 URL 转换为高清格式。
+    
+    转换规则：
+    - 协议: http:// -> https://
+    - 后缀: !nc_n_webp_prv_1 -> !nd_dft_wlteh_webp_3
+    - 后缀: !nc_n_webp_mw_1 -> !nd_dft_wlteh_webp_3
+    """
+    if not url:
+        return url
+    
+    # 协议转换: http -> https
+    if url.startswith("http://"):
+        url = "https://" + url[7:]
+    
+    # 后缀转换: 预览/缩略图 -> 高清
+    # 常见的预览图后缀格式
+    preview_suffixes = [
+        "!nc_n_webp_prv_1",
+        "!nc_n_webp_mw_1",
+        "!nc_n_webp_prv",
+        "!nc_n_webp_mw",
+    ]
+    
+    # 高清格式后缀
+    hd_suffix = "!nd_dft_wlteh_webp_3"
+    
+    for suffix in preview_suffixes:
+        if url.endswith(suffix):
+            url = url[:-len(suffix)] + hd_suffix
+            break
+    
+    return url
+
+
 def extract_image_url(img_data: dict) -> str:
     """从图片数据中提取 URL，优先高清链接。
     
@@ -277,15 +312,16 @@ def extract_image_url(img_data: dict) -> str:
         if info.get("imageScene") == "WB_PRV":
             url = info.get("url")
             if url:
-                return url
+                return convert_to_hd_url(url)
     # 其次从 infoList 提取默认图 (WB_DFT)
     for info in img_data.get("infoList", []) or []:
         if info.get("imageScene") == "WB_DFT":
             url = info.get("url")
             if url:
-                return url
+                return convert_to_hd_url(url)
     # 最后使用 urlDefault 或 urlPre
-    return img_data.get("urlDefault") or img_data.get("urlPre") or img_data.get("url") or ""
+    url = img_data.get("urlDefault") or img_data.get("urlPre") or img_data.get("url") or ""
+    return convert_to_hd_url(url)
 
 
 def format_search_results(feeds: list[dict]) -> list[dict]:
