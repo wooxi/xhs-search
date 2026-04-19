@@ -635,34 +635,52 @@ def get_note_detail(note_url: str, xsec_token: str = "") -> dict:
             }
 
         # 从 DOM 中提取高清图片链接（优先使用 DOM 中的 src）
+        # 根据 XPath 分析: /html/body/div[5]/div[1]/div[2]/.../div/div/img
+        # 详情页图片在深层嵌套结构中，src 包含 sns-webpic-qc.xhscdn.com
         dom_images = client._evaluate("""
             (() => {
-                // 尝试多种选择器提取图片
-                const selectors = [
-                    '.note-slider-img img',
-                    '.swiper-container img',
-                    '.swiper-slide-active img',
-                    '.note-container .swiper img',
-                    '.post-content img',
-                    '.note-content img[src*="xhscdn"]',
-                    'img[src*="sns-webpic"]'
-                ];
-                
                 let images = [];
                 
-                for (const selector of selectors) {
-                    const imgs = document.querySelectorAll(selector);
-                    if (imgs.length > 0) {
-                        imgs.forEach(img => {
-                            // 优先 src，其次 data-src
-                            const url = img.getAttribute('src') || img.getAttribute('data-src') || '';
-                            // 过滤：只收集帖子高清图片，排除头像、图标等
-                            if (url && url.includes('xhscdn.com') && !url.includes('avatar') && !url.includes('icon') && !images.includes(url)) {
-                                images.push(url);
+                // 策略1: 直接匹配 sns-webpic-qc.xhscdn.com 格式的高清图片（最可靠）
+                const allImgs = document.querySelectorAll('img[src*="sns-webpic"]');
+                allImgs.forEach(img => {
+                    const url = img.getAttribute('src') || img.getAttribute('data-src') || '';
+                    if (url && url.includes('sns-webpic') && !url.includes('avatar') && !url.includes('icon') && !images.includes(url)) {
+                        images.push(url);
+                    }
+                });
+                
+                // 策略2: 如果没找到，尝试详情页图片轮播区域的标准结构
+                // XPath: div[5] > div[1] > div[2] > div > div > div[2] > div > div[2] > div > div > img
+                if (images.length === 0) {
+                    // 尝试匹配详情页主内容区域的图片容器
+                    const detailSelectors = [
+                        // 图片轮播区域常见类名
+                        '.swiper-slide img',
+                        '.swiper-wrapper img',
+                        '.note-image-container img',
+                        '.post-detail img',
+                        // 小红书详情页特定结构
+                        'div[class*="note"] div[class*="slider"] img',
+                        'div[class*="note"] div[class*="swiper"] img',
+                        // 通用 fallback
+                        '.note-content img',
+                        '.post-content img'
+                    ];
+                    
+                    for (const selector of detailSelectors) {
+                        const imgs = document.querySelectorAll(selector);
+                        if (imgs.length > 0) {
+                            imgs.forEach(img => {
+                                const url = img.getAttribute('src') || img.getAttribute('data-src') || '';
+                                // 过滤：只收集帖子高清图片，排除头像、图标等
+                                if (url && url.includes('xhscdn.com') && !url.includes('avatar') && !url.includes('icon') && !images.includes(url)) {
+                                    images.push(url);
+                                }
+                            });
+                            if (images.length > 0) {
+                                break;
                             }
-                        });
-                        if (images.length > 0) {
-                            break; // 找到图片就停止尝试其他选择器
                         }
                     }
                 }
