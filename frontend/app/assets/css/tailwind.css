@@ -1,0 +1,14 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 自定义样式 */
+body {
+  background-color: #f5f5f5;
+}
+
+/* 瀑布流卡片样式 */
+.masonry-card {
+  break-inside: avoid;
+  margin-bottom: 16px;
+}

@@ -1,0 +1,35 @@
+# 敏感配置
+.env
+
+# 运行时文件
+.pids
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+ENV/
+.venv/
+
+# Node.js
+node_modules/
+.nuxt/
+.output/
+dist/
+
+# Logs
+logs/*.log
+*.log
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
